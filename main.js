@@ -28,7 +28,7 @@ const vsSource = `
 
 const fsSource = `
     void main() {
-      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
+      gl_FragColor = vec4(0.8, 0.0, 0.2, 1.0); // Red color
     }
 `;
 
@@ -242,9 +242,11 @@ function assembleOctopus() {
     var tentacleBaseLength = 5.0;
     var tentacleMidLength = 5.0;
     var tentacleTipLength = 5.0;
-    var tentacleWidth = 0.2;
+    var tentacleBaseWidth = 0.4;
+    var tentacleMidWidth = 0.3;
+    var tentacleTipWidth = 0.2;
     var numberOfTentacles = 8;
-    var distanceFromCenter = headSize /2;
+    var distanceFromCenter = headSize / 2;
 
     var lastTentacleBase = null;
     var angleStep = (2 * Math.PI / numberOfTentacles);
@@ -254,40 +256,57 @@ function assembleOctopus() {
 
         // Adjust the tentacle's position to be underneath the head
         var x = distanceFromCenter * Math.cos(angle);
-        var y = - headSize / 2 ; // Position at the bottom of the head
+        var y = - headSize ; // Position at the bottom of the head
         var z = distanceFromCenter * Math.sin(angle);
+
+        // Use angles for tentacle joints
+        var baseAngle = tentacleJointAngles[i].base;
+        var midAngle = tentacleJointAngles[i].mid;
+        var tipAngle = tentacleJointAngles[i].tip;
 
         // Create base of the tentacle with adjusted position and rotation
         var tentacleBase = {
-            geometry: createRectangularPrism(tentacleWidth, tentacleBaseLength, tentacleWidth),
+            geometry: createRectangularPrism(tentacleBaseWidth, tentacleBaseLength, tentacleBaseWidth),
             transform: glMatrix.mat4.create(),
             child: null, // Will be set to the mid segment
             sibling: null
         };
         glMatrix.mat4.translate(tentacleBase.transform, tentacleBase.transform, [x, y, z]);
-        glMatrix.mat4.rotate(tentacleBase.transform, tentacleBase.transform, angle, [0, 1, 0]);
+        glMatrix.mat4.translate(tentacleBase.transform, tentacleBase.transform, [0, tentacleBaseLength / 2, 0]);
+        glMatrix.mat4.rotate(tentacleBase.transform, tentacleBase.transform, glMatrix.glMatrix.toRadian(baseAngle), [0, 0, 1]);
+        glMatrix.mat4.translate(tentacleBase.transform, tentacleBase.transform, [0, -tentacleBaseLength / 2, 0]);
+        
+        // glMatrix.mat4.rotate(tentacleBase.transform, tentacleBase.transform, glMatrix.glMatrix.toRadian(baseAngle), [0, 0, 1]);
         tentacleBase.buffers = initBuffers(gl, tentacleBase.geometry);
 
         // Create mid segment of the tentacle
         var tentacleMid = {
-            geometry: createRectangularPrism(tentacleWidth, tentacleMidLength, tentacleWidth),
+            geometry: createRectangularPrism(tentacleMidWidth, tentacleMidLength, tentacleMidWidth),
             transform: glMatrix.mat4.create(), // Start with an identity matrix
             child: null,
             sibling: null
         };
         // Position the mid segment at the end of the base segment
         glMatrix.mat4.translate(tentacleMid.transform, tentacleMid.transform, [0, -tentacleBaseLength, 0]);
+        glMatrix.mat4.translate(tentacleMid.transform, tentacleMid.transform, [0, tentacleMidLength / 2, 0]);
+        glMatrix.mat4.rotate(tentacleMid.transform, tentacleMid.transform, glMatrix.glMatrix.toRadian(midAngle), [0, 0, 1]);
+        glMatrix.mat4.translate(tentacleMid.transform, tentacleMid.transform, [0, -tentacleMidLength / 2, 0]);
+
         tentacleMid.buffers = initBuffers(gl, tentacleMid.geometry);
     
         // Create tip segment of the tentacle
         var tentacleTip = {
-            geometry: createRectangularPrism(tentacleWidth, tentacleTipLength, tentacleWidth),
+            geometry: createRectangularPrism(tentacleTipWidth, tentacleTipLength, tentacleTipWidth),
             transform: glMatrix.mat4.create(), // Start with an identity matrix
             child: null,
             sibling: null
         };
         // Position the tip segment at the end of the mid segment
         glMatrix.mat4.translate(tentacleTip.transform, tentacleTip.transform, [0, -tentacleMidLength, 0]);
+        glMatrix.mat4.translate(tentacleTip.transform, tentacleTip.transform, [0, tentacleTipLength / 2, 0]);
+        glMatrix.mat4.rotate(tentacleTip.transform, tentacleTip.transform, glMatrix.glMatrix.toRadian(tipAngle), [0, 0, 1]);
+        glMatrix.mat4.translate(tentacleTip.transform, tentacleTip.transform, [0, -tentacleTipLength / 2, 0]);        
+        
         tentacleTip.buffers = initBuffers(gl, tentacleTip.geometry);
 
         // Set child references to create the hierarchy
@@ -307,7 +326,7 @@ function assembleOctopus() {
 }
 
 // Initialize octopus parts
-const octopusParts = assembleOctopus();
+var octopusParts = assembleOctopus();
 
 // Initialize buffers for each part of the octopus
 octopusParts.forEach(part => {
@@ -372,14 +391,29 @@ function drawPart(gl, programInfo, buffers, transformMatrix) {
     gl.drawElements(gl.TRIANGLES, buffers.vertexCount, gl.UNSIGNED_SHORT, 0);
 }
 
-const tentacle1Base = document.getElementById('tentacle1Base');
-tentacle1Base.addEventListener('input', function() {
-    // Update the tentacle joint angle based on slider value
-    // Replace 'updateTentacleAngle' with your function to update the model
-    updateTentacleAngle(1, 'base', this.value);
-});
+// Loop through each tentacle
+for (let i = 1; i <= 8; i++) {
+    // Attach event listener to each joint of the tentacle
+    ['base', 'mid', 'tip'].forEach(joint => {
+        const controlID = `tentacle${i}${joint.charAt(0).toUpperCase() + joint.slice(1)}`;
+        const control = document.getElementById(controlID);
+        if (control) {
+            control.addEventListener('input', function() {
+                updateTentacleAngle(i, joint, parseFloat(this.value));
+            });
+        }
+    });
+}
 
 // ... Add event listeners for other tentacle controls ...
+
+function updateTentacleAngle(tentacleNumber, joint, angle) {
+    // Update the angle for the specified tentacle joint
+    tentacleJointAngles[tentacleNumber - 1][joint] = parseFloat(angle);
+    // Reassemble the octopus with updated angles
+    octopusParts = assembleOctopus();
+    render();
+}
 
 function updateCameraAngle(angle) {
     // Convert angle to radians
@@ -397,16 +431,6 @@ function updateCameraAngle(angle) {
     render();
 }
 
-function updateTentacleAngle(tentacleNumber, joint, angle) {
-    // Update the angle for the specified tentacle joint
-    tentacleJointAngles[tentacleNumber - 1][joint] = parseFloat(angle);
-
-    // Reassemble the octopus with updated angles
-    octopusParts = assembleOctopus();
-    render();
-}
-
-
 // Camera control
 const cameraAngle = document.getElementById('cameraAngle');
 cameraAngle.addEventListener('input', function() {
@@ -416,10 +440,6 @@ cameraAngle.addEventListener('input', function() {
 });
 
 // ... Rest of your WebGL rendering and animation logic ...
-
-function updateTentacleAngle(tentacleNumber, joint, angle) {
-    // Implement logic to update the specific tentacle joint angle
-}
 
 function render() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
