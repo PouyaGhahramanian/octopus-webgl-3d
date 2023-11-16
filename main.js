@@ -9,11 +9,12 @@ if (!gl) {
 }
 
 // Set clear color to black, fully opaque
-gl.clearColor(0.0, 0.0, 0.0, 1.0);
+gl.clearColor(0.0, 0.0, 0.0, 0.0);
 // Clear the color buffer with specified clear color
 gl.clear(gl.COLOR_BUFFER_BIT);
 
-// More code will go here for shaders, buffers, etc.
+gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
 const vsSource = `
     attribute vec4 aVertexPosition;
     uniform mat4 uModelViewMatrix;
@@ -26,25 +27,9 @@ const vsSource = `
 
 const fsSource = `
     void main() {
-      gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // White color
+      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
     }
 `;
-
-// Define the shaders
-const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
-
-// Collect all the info needed to use the shader program.
-// Look up which attributes our shader program is using.
-const programInfo = {
-    program: shaderProgram,
-    attribLocations: {
-        vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-    },
-    uniformLocations: {
-        projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-        modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-    },
-};
 
 function loadShader(gl, type, source) {
     const shader = gl.createShader(type);
@@ -96,27 +81,88 @@ function initShaderProgram(gl, vsSource, fsSource) {
     return shaderProgram;
 }
 
+const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
+
+const programInfo = {
+    program: shaderProgram,
+    attribLocations: {
+        vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+    },
+    uniformLocations: {
+        projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+        modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+    },
+};
+
+// Function to initialize buffers for a given geometry
 function initBuffers(gl, geometry) {
-    // Create a buffer for the geometry's vertices
     const vertexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geometry.vertices), gl.STATIC_DRAW);
 
-    // Create a buffer for the indices
     const indexBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(geometry.indices), gl.STATIC_DRAW);
 
-    // Create a buffer for the normals
-    const normalBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geometry.normals), gl.STATIC_DRAW);
-
     return {
         vertex: vertexBuffer,
-        normal: normalBuffer,
         indices: indexBuffer,
         vertexCount: geometry.indices.length
+    };
+}
+
+function createCube(size) {
+    var halfSize = size / 2;
+    const vertices = [
+        // Front face
+        -halfSize, -halfSize,  halfSize,
+         halfSize, -halfSize,  halfSize,
+         halfSize,  halfSize,  halfSize,
+        -halfSize,  halfSize,  halfSize,
+
+        // Back face
+        -halfSize, -halfSize, -halfSize,
+        -halfSize,  halfSize, -halfSize,
+         halfSize,  halfSize, -halfSize,
+         halfSize, -halfSize, -halfSize,
+
+        // Top face
+        -halfSize,  halfSize, -halfSize,
+        -halfSize,  halfSize,  halfSize,
+         halfSize,  halfSize,  halfSize,
+         halfSize,  halfSize, -halfSize,
+
+        // Bottom face
+        -halfSize, -halfSize, -halfSize,
+         halfSize, -halfSize, -halfSize,
+         halfSize, -halfSize,  halfSize,
+        -halfSize, -halfSize,  halfSize,
+
+        // Right face
+         halfSize, -halfSize, -halfSize,
+         halfSize,  halfSize, -halfSize,
+         halfSize,  halfSize,  halfSize,
+         halfSize, -halfSize,  halfSize,
+
+        // Left face
+        -halfSize, -halfSize, -halfSize,
+        -halfSize, -halfSize,  halfSize,
+        -halfSize,  halfSize,  halfSize,
+        -halfSize,  halfSize, -halfSize,
+    ];
+
+    const indices = [
+        0, 1, 2,      0, 2, 3,    // front
+        4, 5, 6,      4, 6, 7,    // back
+        8, 9, 10,     8, 10, 11,  // top
+        12, 13, 14,   12, 14, 15, // bottom
+        16, 17, 18,   16, 18, 19, // right
+        20, 21, 22,   20, 22, 23, // left
+    ];
+
+    return {
+        vertices: vertices,
+        indices: indices
     };
 }
 
@@ -178,179 +224,114 @@ function createRectangularPrism(width, height, depth) {
 }
 
 function assembleOctopus() {
-
     var octopusParts = [];
 
-    // Create the head (relatively large for visibility)
-    var headSize = 2.0; 
-    var head = createRectangularPrism(headSize, headSize, headSize);
-    head.transform = glMatrix.mat4.create(); // Identity matrix for the head
-    octopusParts.push({ geometry: head, transform: head.transform });
+    // Create the head
+    var headSize = 4.0;
+    var head = {
+        geometry: createRectangularPrism(headSize, headSize, headSize),
+        transform: glMatrix.mat4.create(),
+        child: null, // Will be set to the first tentacle
+        sibling: null
+    };
+    head.buffers = initBuffers(gl, head.geometry);
+    octopusParts.push(head);
 
-    // Tentacle parameters (proportional to the head)
-    var tentacleLength = 3.0; // Longer tentacles
-    var tentacleWidth = 0.2; // Slightly thinner tentacles
+    // Tentacle parameters
+    var tentacleBaseLength = 5.0;
+    var tentacleMidLength = 5.0;
+    var tentacleTipLength = 5.0;
+    var tentacleWidth = 0.2;
     var numberOfTentacles = 8;
-    var jointsPerTentacle = 3;
+    var distanceFromCenter = headSize /2;
 
-    // Create and position tentacles
+    var lastTentacleBase = null;
+    var angleStep = (2 * Math.PI / numberOfTentacles);
+
     for (var i = 0; i < numberOfTentacles; i++) {
-        var tentacle = [];
+        var angle = angleStep * i;
 
-        for (var j = 0; j < jointsPerTentacle; j++) {
-            var joint = createRectangularPrism(tentacleWidth, tentacleLength, tentacleWidth);
-            joint.transform = glMatrix.mat4.create();
-
-            // Position each joint relative to the previous joint
-            if (j > 0) {
-                glMatrix.mat4.translate(joint.transform, joint.transform, [0, tentacleLength, 0]);
-            }
-
-            tentacle.push({ geometry: joint, transform: joint.transform });
-        }
-
-        // Calculate initial position and orientation of each tentacle
-        var angle = (2 * Math.PI / numberOfTentacles) * i;
-        var distanceFromCenter = headSize / 2 + tentacleLength / 2;
+        // Adjust the tentacle's position to be underneath the head
         var x = distanceFromCenter * Math.cos(angle);
-        var y = distanceFromCenter * Math.sin(angle);
-        var z = 0;
+        var y = - headSize / 2 ; // Position at the bottom of the head
+        var z = distanceFromCenter * Math.sin(angle);
 
-        glMatrix.mat4.translate(tentacle[0].transform, tentacle[0].transform, [x, y, z]);
-        glMatrix.mat4.rotate(tentacle[0].transform, tentacle[0].transform, angle, [0, 0, 1]);
+        // Create base of the tentacle with adjusted position and rotation
+        var tentacleBase = {
+            geometry: createRectangularPrism(tentacleWidth, tentacleBaseLength, tentacleWidth),
+            transform: glMatrix.mat4.create(),
+            child: null, // Will be set to the mid segment
+            sibling: null
+        };
+        glMatrix.mat4.translate(tentacleBase.transform, tentacleBase.transform, [x, y, z]);
+        glMatrix.mat4.rotate(tentacleBase.transform, tentacleBase.transform, angle, [0, 1, 0]);
+        tentacleBase.buffers = initBuffers(gl, tentacleBase.geometry);
 
-        // Add the tentacle to the octopus
-        octopusParts.push(tentacle);
+        // Create mid segment of the tentacle
+        var tentacleMid = {
+            geometry: createRectangularPrism(tentacleWidth, tentacleMidLength, tentacleWidth),
+            transform: glMatrix.mat4.create(), // Start with an identity matrix
+            child: null,
+            sibling: null
+        };
+        // Position the mid segment at the end of the base segment
+        glMatrix.mat4.translate(tentacleMid.transform, tentacleMid.transform, [0, -tentacleBaseLength, 0]);
+        tentacleMid.buffers = initBuffers(gl, tentacleMid.geometry);
+    
+        // Create tip segment of the tentacle
+        var tentacleTip = {
+            geometry: createRectangularPrism(tentacleWidth, tentacleTipLength, tentacleWidth),
+            transform: glMatrix.mat4.create(), // Start with an identity matrix
+            child: null,
+            sibling: null
+        };
+        // Position the tip segment at the end of the mid segment
+        glMatrix.mat4.translate(tentacleTip.transform, tentacleTip.transform, [0, -tentacleMidLength, 0]);
+        tentacleTip.buffers = initBuffers(gl, tentacleTip.geometry);
+
+        // Set child references to create the hierarchy
+        tentacleBase.child = tentacleMid;
+        tentacleMid.child = tentacleTip;
+
+        // Linking the tentacle base in the sibling chain
+        if (lastTentacleBase) {
+            lastTentacleBase.sibling = tentacleBase;
+        } else {
+            head.child = tentacleBase;
+        }
+        lastTentacleBase = tentacleBase;
     }
 
     return octopusParts;
 }
 
-function drawOctopus(gl, programInfo, octopusParts, viewProjectionMatrix) {
-    octopusParts.forEach(part => {
-        if (Array.isArray(part)) {
-            part.forEach(segment => {
-                drawGeometry(gl, programInfo, segment.buffers, segment.transform, viewProjectionMatrix);
-            });
-        } else {
-            drawGeometry(gl, programInfo, part.buffers, part.transform, viewProjectionMatrix);
-        }
-    });
-}
+// Create a perspective matrix for projection
+const fieldOfView = 45 * Math.PI / 180; // in radians
+const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+const zNear = 0.1;
+const zFar = 100.0;
+const projectionMatrix = glMatrix.mat4.create();
+glMatrix.mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
 
-function drawGeometry(gl, programInfo, buffers, modelMatrix, viewProjectionMatrix) {
-    gl.useProgram(programInfo.program);
-    // Bind the vertex buffer
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
-    gl.vertexAttribPointer(
-        programInfo.attribLocations.vertexPosition,
-        3, // number of components per vertex attribute (x, y, z)
-        gl.FLOAT,
-        false,
-        0,
-        0
-    );
-    gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
+// Set the position of the camera
+const cameraPosition = [0, 0, -10]; // Example: camera 10 units back on the Z-axis
+const lookAtPoint = [0, 0, 0]; // Looking at the origin
+const upDirection = [0, 1, 0]; // "Up" direction in 3D space
 
-    // Bind the normal buffer if you are using lighting
-    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
-    gl.vertexAttribPointer(
-        programInfo.attribLocations.vertexNormal,
-        3, // number of components per normal attribute (x, y, z)
-        gl.FLOAT,
-        false,
-        0,
-        0
-    );
-    gl.enableVertexAttribArray(programInfo.attribLocations.vertexNormal);
+// Create a view matrix for camera
+const viewMatrix = glMatrix.mat4.create();
+glMatrix.mat4.lookAt(viewMatrix, cameraPosition, lookAtPoint, upDirection);
 
-    // Apply the model matrix (transformations) to the geometry
-    var modelViewMatrix = glMatrix.mat4.create();
-    glMatrix.mat4.multiply(modelViewMatrix, viewProjectionMatrix, modelMatrix);
+// Combine the projection and view matrix
+const viewProjectionMatrix = glMatrix.mat4.create();
+glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
 
-    // Set the shader uniforms
-    gl.uniformMatrix4fv(
-        programInfo.uniformLocations.modelViewMatrix,
-        false,
-        modelViewMatrix
-    );
+gl.viewport(0, 0, canvas.width, canvas.height)
 
-    // Bind the index buffer
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
-
-    // Draw the geometry
-    gl.drawElements(gl.TRIANGLES, buffers.vertexCount, gl.UNSIGNED_SHORT, 0);
-}
-
-function drawScene(gl, programInfo, buffers) {
-    gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
-    gl.clearDepth(1.0);                 // Clear everything
-    gl.enable(gl.DEPTH_TEST);           // Enable depth testing
-    gl.depthFunc(gl.LEQUAL);            // Near things obscure far things
-
-    // Clear the canvas before we start drawing on it.
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-    // Create a perspective matrix
-    const fieldOfView = 45 * Math.PI / 180;   // in radians
-    const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-    const zNear = 0.1;
-    const zFar = 100.0;
-    const projectionMatrix = glMatrix.mat4.create();
-
-    // Note: glmatrix.js always has the first argument as the destination to receive the result.
-    glMatrix.mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
-
-    // Set the drawing position to the "identity" point, which is the center of the scene.
-    const modelViewMatrix = glMatrix.mat4.create();
-
-    // Move the drawing position a bit to where we want to start drawing the square.
-    glMatrix.mat4.translate(modelViewMatrix,     // destination matrix
-                   modelViewMatrix,     // matrix to translate
-                   [-0.0, 0.0, -6.0]);  // amount to translate
-
-    // Tell WebGL how to pull out the positions from the position buffer into the vertexPosition attribute.
-    {
-        const numComponents = 3;  // pull out 3 values per iteration
-        const type = gl.FLOAT;    // the data in the buffer is 32bit floats
-        const normalize = false;  // don't normalize
-        const stride = 0;         // how many bytes to get from one set of values to the next
-                                  // 0 = use type and numComponents above
-        const offset = 0;         // how many bytes inside the buffer to start from
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-        gl.vertexAttribPointer(
-            programInfo.attribLocations.vertexPosition,
-            numComponents,
-            type,
-            normalize,
-            stride,
-            offset);
-        gl.enableVertexAttribArray(
-            programInfo.attribLocations.vertexPosition);
-    }
-
-    // Tell WebGL to use our program when drawing
-    gl.useProgram(programInfo.program);
-
-    // Set the shader uniforms
-    gl.uniformMatrix4fv(
-        programInfo.uniformLocations.projectionMatrix,
-        false,
-        projectionMatrix);
-    gl.uniformMatrix4fv(
-        programInfo.uniformLocations.modelViewMatrix,
-        false,
-        modelViewMatrix);
-
-    {
-        const offset = 0;
-        const vertexCount = 4;
-        gl.drawArrays(gl.TRIANGLE_STRIP, offset, vertexCount);
-    }
-}
-
+// Initialize octopus parts
 const octopusParts = assembleOctopus();
 
+// Initialize buffers for each part of the octopus
 octopusParts.forEach(part => {
     if (Array.isArray(part)) {
         part.forEach(segment => {
@@ -361,88 +342,69 @@ octopusParts.forEach(part => {
     }
 });
 
-// // Create view projection matrix
-// const viewProjectionMatrix = glMatrix.mat4.create();
-// glMatrix.mat4.perspective(viewProjectionMatrix, 45 * Math.PI / 180, gl.canvas.clientWidth / gl.canvas.clientHeight, 0.1, 100.0);
-// glMatrix.mat4.translate(viewProjectionMatrix, viewProjectionMatrix, [0, 0, -6]); // Adjust camera position as needed
+function traverseAndDraw(part, parentTransform) {
+    if (!part) return;
 
-// Create view projection matrix
-const viewProjectionMatrix = glMatrix.mat4.create();
+    // Combine the parent transform with the current part's transform
+    var combinedTransform = glMatrix.mat4.create();
+    glMatrix.mat4.multiply(combinedTransform, parentTransform, part.transform);
 
-// Define the field of view, aspect ratio, near and far clipping planes
-const fieldOfView = 45 * Math.PI / 180;   // in radians
-const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-const zNear = 0.1;
-const zFar = 100.0;
+    // Draw the current part with the combined transform
+    drawPart(gl, programInfo, part.buffers, combinedTransform);
 
-glMatrix.mat4.perspective(viewProjectionMatrix, fieldOfView, aspect, zNear, zFar);
+    // Recursively draw the child with the updated transform
+    traverseAndDraw(part.child, combinedTransform);
 
-// Position the camera
-const cameraPosition = [0, 0, 10]; // Move the camera back 10 units
-const lookAtPoint = [0, 0, 0]; // Look at the center of the scene
-const upDirection = [0, 1, 0]; // "Up" direction in 3D space
+    // Siblings maintain the parent's transform
+    traverseAndDraw(part.sibling, parentTransform);
+}
 
-glMatrix.mat4.lookAt(viewProjectionMatrix, cameraPosition, lookAtPoint, upDirection);
+function drawPart(gl, programInfo, buffers, transformMatrix) {
+    // Bind the appropriate buffers
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+    gl.vertexAttribPointer(
+        programInfo.attribLocations.vertexPosition,
+        3, // number of components per vertex attribute
+        gl.FLOAT,
+        false,
+        0,
+        0
+    );
+    gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
 
-// Example render loop or main drawing function
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+
+    // Create a model view matrix from the provided transform matrix
+    const modelViewMatrix = glMatrix.mat4.create();
+    glMatrix.mat4.multiply(modelViewMatrix, viewProjectionMatrix, transformMatrix);
+
+    // Set the shader uniforms
+    gl.uniformMatrix4fv(
+        programInfo.uniformLocations.modelViewMatrix,
+        false,
+        modelViewMatrix
+    );
+    gl.uniformMatrix4fv(
+        programInfo.uniformLocations.projectionMatrix,
+        false,
+        viewProjectionMatrix
+    );
+
+    // Draw the part
+    gl.drawElements(gl.TRIANGLES, buffers.vertexCount, gl.UNSIGNED_SHORT, 0);
+}
+
 function render() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    drawOctopus(gl, programInfo, octopusParts, viewProjectionMatrix);
-    // ... any additional rendering code
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) {
-        console.error('WebGL Error:', error);
-    }
+    gl.useProgram(programInfo.program);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+
+    // Start the traversal from the head with an identity matrix
+    var identityMatrix = glMatrix.mat4.create();
+    traverseAndDraw(octopusParts[0], identityMatrix);
+
+    requestAnimationFrame(render);
 }
 
 render();
-// const buffers = initBuffers(gl);
-// drawScene(gl, programInfo, buffers);
-
-// function initTriangleBuffers(gl) {
-//     const vertices = new Float32Array([
-//         0.0,  1.0,  0.0,  // Vertex 1 (X, Y, Z)
-//        -1.0, -1.0,  0.0,  // Vertex 2
-//         1.0, -1.0,  0.0   // Vertex 3
-//     ]);
-
-//     const vertexBuffer = gl.createBuffer();
-//     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-//     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-
-//     return {
-//         vertex: vertexBuffer,
-//         vertexCount: 3
-//     };
-// }
-// function drawTriangle(gl, programInfo, buffers) {
-//     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black
-//     gl.clearDepth(1.0);                 // Clear everything
-//     gl.enable(gl.DEPTH_TEST);           // Enable depth testing
-//     gl.depthFunc(gl.LEQUAL);            // Near things obscure far things
-//     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-//     gl.useProgram(programInfo.program);
-
-//     // Set up the vertex buffer
-//     gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
-//     gl.vertexAttribPointer(programInfo.attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
-//     gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
-
-//     // Create a perspective matrix
-//     const projectionMatrix = glMatrix.mat4.create();
-//     glMatrix.mat4.perspective(projectionMatrix, 45 * Math.PI / 180, gl.canvas.clientWidth / gl.canvas.clientHeight, 0.1, 100.0);
-
-//     // Set the drawing position to the "identity" point
-//     const modelViewMatrix = glMatrix.mat4.create();
-//     glMatrix.mat4.translate(modelViewMatrix, modelViewMatrix, [-0.0, 0.0, -6.0]); // Move back 6 units
-
-//     // Set the shader uniforms
-//     gl.uniformMatrix4fv(programInfo.uniformLocations.projectionMatrix, false, projectionMatrix);
-//     gl.uniformMatrix4fv(programInfo.uniformLocations.modelViewMatrix, false, modelViewMatrix);
-
-//     // Draw the triangle
-//     gl.drawArrays(gl.TRIANGLES, 0, buffers.vertexCount);
-// }
-// const triangleBuffers = initTriangleBuffers(gl);
-// drawTriangle(gl, programInfo, triangleBuffers);
