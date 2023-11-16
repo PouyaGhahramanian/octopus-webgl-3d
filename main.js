@@ -13,7 +13,8 @@ gl.clearColor(0.0, 0.0, 0.0, 0.0);
 // Clear the color buffer with specified clear color
 gl.clear(gl.COLOR_BUFFER_BIT);
 
-gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+// Define joint angles for each tentacle, assuming 8 tentacles with 3 joints each
+var tentacleJointAngles = Array(8).fill(null).map(() => ({ base: 0, mid: 0, tip: 0 }));
 
 const vsSource = `
     attribute vec4 aVertexPosition;
@@ -305,29 +306,6 @@ function assembleOctopus() {
     return octopusParts;
 }
 
-// Create a perspective matrix for projection
-const fieldOfView = 45 * Math.PI / 180; // in radians
-const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-const zNear = 0.1;
-const zFar = 100.0;
-const projectionMatrix = glMatrix.mat4.create();
-glMatrix.mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
-
-// Set the position of the camera
-const cameraPosition = [0, 0, -10]; // Example: camera 10 units back on the Z-axis
-const lookAtPoint = [0, 0, 0]; // Looking at the origin
-const upDirection = [0, 1, 0]; // "Up" direction in 3D space
-
-// Create a view matrix for camera
-const viewMatrix = glMatrix.mat4.create();
-glMatrix.mat4.lookAt(viewMatrix, cameraPosition, lookAtPoint, upDirection);
-
-// Combine the projection and view matrix
-const viewProjectionMatrix = glMatrix.mat4.create();
-glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
-
-gl.viewport(0, 0, canvas.width, canvas.height)
-
 // Initialize octopus parts
 const octopusParts = assembleOctopus();
 
@@ -394,11 +372,63 @@ function drawPart(gl, programInfo, buffers, transformMatrix) {
     gl.drawElements(gl.TRIANGLES, buffers.vertexCount, gl.UNSIGNED_SHORT, 0);
 }
 
+const tentacle1Base = document.getElementById('tentacle1Base');
+tentacle1Base.addEventListener('input', function() {
+    // Update the tentacle joint angle based on slider value
+    // Replace 'updateTentacleAngle' with your function to update the model
+    updateTentacleAngle(1, 'base', this.value);
+});
+
+// ... Add event listeners for other tentacle controls ...
+
+function updateCameraAngle(angle) {
+    // Convert angle to radians
+    var radAngle = angle * Math.PI / 180;
+
+    // Update the camera position to rotate around the Y-axis
+    var distance = Math.sqrt(cameraPosition[0] * cameraPosition[0] + cameraPosition[2] * cameraPosition[2]);
+    cameraPosition[0] = distance * Math.sin(radAngle);
+    cameraPosition[2] = -distance * Math.cos(radAngle);
+
+    // Update the view matrix
+    glMatrix.mat4.lookAt(viewMatrix, cameraPosition, lookAtPoint, upDirection);
+
+    // Update viewProjectionMatrix in the render loop
+    render();
+}
+
+function updateTentacleAngle(tentacleNumber, joint, angle) {
+    // Update the angle for the specified tentacle joint
+    tentacleJointAngles[tentacleNumber - 1][joint] = parseFloat(angle);
+
+    // Reassemble the octopus with updated angles
+    octopusParts = assembleOctopus();
+    render();
+}
+
+
+// Camera control
+const cameraAngle = document.getElementById('cameraAngle');
+cameraAngle.addEventListener('input', function() {
+    // Update the camera angle based on slider value
+    // Replace 'updateCameraAngle' with your function to update the camera
+    updateCameraAngle(this.value);
+});
+
+// ... Rest of your WebGL rendering and animation logic ...
+
+function updateTentacleAngle(tentacleNumber, joint, angle) {
+    // Implement logic to update the specific tentacle joint angle
+}
+
 function render() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     gl.useProgram(programInfo.program);
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
+
+    // Combine the updated projection and view matrix
+    glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
 
     // Start the traversal from the head with an identity matrix
     var identityMatrix = glMatrix.mat4.create();
@@ -407,4 +437,26 @@ function render() {
     requestAnimationFrame(render);
 }
 
+// Initialize camera position
+var cameraPosition = [0, 0, -10];
+var lookAtPoint = [0, 0, 0];
+var upDirection = [0, 1, 0];
+
+var viewMatrix = glMatrix.mat4.create();
+glMatrix.mat4.lookAt(viewMatrix, cameraPosition, lookAtPoint, upDirection);
+
+// Initialize projection matrix
+var fieldOfView = 45 * Math.PI / 180; // in radians
+var aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+var zNear = 0.1;
+var zFar = 100.0;
+var projectionMatrix = glMatrix.mat4.create();
+glMatrix.mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+
+// Initialize viewProjectionMatrix
+var viewProjectionMatrix = glMatrix.mat4.create();
+glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
+gl.viewport(0, 0, canvas.width, canvas.height)
+
 render();
+
