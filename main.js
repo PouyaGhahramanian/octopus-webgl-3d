@@ -16,21 +16,143 @@ gl.clear(gl.COLOR_BUFFER_BIT);
 // Define joint angles for each tentacle, assuming 8 tentacles with 3 joints each
 var tentacleJointAngles = Array(8).fill(null).map(() => ({ base: 0, mid: 0, tip: 0 }));
 
+// No lighting
+// const vsSource = `
+//     attribute vec4 aVertexPosition;
+//     uniform mat4 uModelViewMatrix;
+//     uniform mat4 uProjectionMatrix;
+
+//     void main() {
+//       gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+//     }
+// `;
+
+// const fsSource = `
+//     void main() {
+//       gl_FragColor = vec4(0.8, 0.0, 0.2, 1.0); // Red color
+//     }
+// `;
+
+// Ambient + Point + Directional Light
 const vsSource = `
-    attribute vec4 aVertexPosition;
-    uniform mat4 uModelViewMatrix;
-    uniform mat4 uProjectionMatrix;
+attribute vec4 aVertexPosition;
+attribute vec3 aVertexNormal;
+attribute vec2 aTextureCoord;
 
-    void main() {
-      gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-    }
+uniform mat4 uModelViewMatrix;
+uniform mat4 uProjectionMatrix;
+uniform mat4 uNormalMatrix;
+
+uniform vec3 uAmbientLight; // Ambient light color
+uniform vec3 uDirectionalLightColor; // Directional light color
+uniform vec3 uDirectionalLightDirection; // Directional light direction
+
+uniform vec3 uPointLightColor; // Point light color
+uniform vec3 uPointLightPosition; // Point light position
+
+varying highp vec3 vLighting;
+varying highp vec2 vTextureCoord;
+
+void main() {
+    gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
+
+    // Normal transformation
+    highp vec3 transformedNormal = normalize(vec3(uNormalMatrix * vec4(aVertexNormal, 0.0)));
+
+    vTextureCoord = aTextureCoord;
+
+    // Ambient light
+    highp vec3 ambient = uAmbientLight;
+
+    // Directional light
+    highp float directional = max(dot(transformedNormal, uDirectionalLightDirection), 0.2);
+    highp vec3 directionalLight = uDirectionalLightColor * directional;
+
+    // Point light
+    highp vec3 lightDirection = normalize(uPointLightPosition - vec3(uModelViewMatrix * aVertexPosition));
+    highp float pointLightIntensity = max(dot(transformedNormal, lightDirection), 0.2);
+    highp vec3 pointLight = uPointLightColor * pointLightIntensity;
+
+    // Combine the lighting components
+    vLighting = ambient + directionalLight + pointLight;
+}
 `;
 
+// gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0) * vec4(vLighting, 1.0);
+// const fsSource = `
+// varying highp vec3 vLighting;
+
+// void main() {
+//     gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0) * vec4(vLighting, 1.0); // Red color with lighting applied
+// }
+// `;
+
+// With texture
 const fsSource = `
-    void main() {
-      gl_FragColor = vec4(0.8, 0.0, 0.2, 1.0); // Red color
-    }
+varying highp vec3 vLighting;
+varying highp vec2 vTextureCoord;
+uniform sampler2D uSampler;
+void main() {
+    highp vec4 texelColor = texture2D(uSampler, vTextureCoord);
+    gl_FragColor = texelColor * vec4(vLighting, 1.0);
+}
 `;
+
+// Loading and setting up the texture
+function loadTexture(gl, url) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    // Because images have to be downloaded over the internet
+    // they might take a moment until they are ready.
+    // Until then, put a single pixel in the texture so we can
+    // use it immediately.
+    const level = 0;
+    const internalFormat = gl.RGBA;
+    const width = 1;
+    const height = 1;
+    const border = 0;
+    const srcFormat = gl.RGBA;
+    const srcType = gl.UNSIGNED_BYTE;
+    const pixel = new Uint8Array([0, 0, 255, 255]);  // opaque blue
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                  width, height, border, srcFormat, srcType,
+                  pixel);
+
+    const image = new Image();
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texImage2D(gl.TEXTURE_2D, level, internalFormat,
+                      srcFormat, srcType, image);
+
+        // WebGL1 has different requirements for power of 2 images
+        // vs non power of 2 images so check if the image is a
+        // power of 2 in both dimensions.
+        if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+           // Yes, it's a power of 2. Generate mips.
+           gl.generateMipmap(gl.TEXTURE_2D);
+        } else {
+           // No, it's not a power of 2. Turn off mips and set
+           // wrapping to clamp to edge
+           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+        // octopusParts = assembleOctopus();
+        render();
+    };
+    // image.src = url;
+    image.src = url + "?time=" + new Date().getTime(); // Add this line
+    // render();
+    return texture;
+}
+
+function isPowerOf2(value) {
+    return (value & (value - 1)) == 0;
+}
+
+// Example usage
+const texture = loadTexture(gl, 'texture.jpg');
 
 function loadShader(gl, type, source) {
     const shader = gl.createShader(type);
@@ -84,16 +206,45 @@ function initShaderProgram(gl, vsSource, fsSource) {
 
 const shaderProgram = initShaderProgram(gl, vsSource, fsSource);
 
+function setupLightingUniforms() {
+    // Set up ambient light
+    gl.uniform3f(programInfo.uniformLocations.ambientLight, 0.2, 0.2, 0.2);
+
+    // Set up directional light
+    gl.uniform3f(programInfo.uniformLocations.directionalLightColor, 1.0, 1.0, 1.0);
+    gl.uniform3f(programInfo.uniformLocations.directionalLightDirection, -0.5, -0.75, -0.5);
+
+    // Set up point light
+    gl.uniform3f(programInfo.uniformLocations.pointLightColor, 1.0, 1.0, 1.0);
+    gl.uniform3f(programInfo.uniformLocations.pointLightPosition, 5.0, 5.0, 5.0);
+
+    // Bind texture
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.uniform1i(programInfo.uniformLocations.uSampler, 0);
+}
+
 const programInfo = {
     program: shaderProgram,
     attribLocations: {
         vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+        vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
+        textureCoord: gl.getAttribLocation(shaderProgram, 'aTextureCoord'),
     },
     uniformLocations: {
         projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
         modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+        normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
+        uSampler: gl.getUniformLocation(shaderProgram, 'uSampler'),
+        ambientLight: gl.getUniformLocation(shaderProgram, 'uAmbientLight'),
+        directionalLightColor: gl.getUniformLocation(shaderProgram, 'uDirectionalLightColor'),
+        directionalLightDirection: gl.getUniformLocation(shaderProgram, 'uDirectionalLightDirection'),
+        pointLightColor: gl.getUniformLocation(shaderProgram, 'uPointLightColor'),
+        pointLightPosition: gl.getUniformLocation(shaderProgram, 'uPointLightPosition'),
     },
 };
+
+setupLightingUniforms();
 
 // Function to initialize buffers for a given geometry
 function initBuffers(gl, geometry) {
@@ -105,65 +256,15 @@ function initBuffers(gl, geometry) {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(geometry.indices), gl.STATIC_DRAW);
 
+    const textureCoordBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, textureCoordBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(geometry.textureCoordinates), gl.STATIC_DRAW);
+
     return {
         vertex: vertexBuffer,
         indices: indexBuffer,
-        vertexCount: geometry.indices.length
-    };
-}
-
-function createCube(size) {
-    var halfSize = size / 2;
-    const vertices = [
-        // Front face
-        -halfSize, -halfSize,  halfSize,
-         halfSize, -halfSize,  halfSize,
-         halfSize,  halfSize,  halfSize,
-        -halfSize,  halfSize,  halfSize,
-
-        // Back face
-        -halfSize, -halfSize, -halfSize,
-        -halfSize,  halfSize, -halfSize,
-         halfSize,  halfSize, -halfSize,
-         halfSize, -halfSize, -halfSize,
-
-        // Top face
-        -halfSize,  halfSize, -halfSize,
-        -halfSize,  halfSize,  halfSize,
-         halfSize,  halfSize,  halfSize,
-         halfSize,  halfSize, -halfSize,
-
-        // Bottom face
-        -halfSize, -halfSize, -halfSize,
-         halfSize, -halfSize, -halfSize,
-         halfSize, -halfSize,  halfSize,
-        -halfSize, -halfSize,  halfSize,
-
-        // Right face
-         halfSize, -halfSize, -halfSize,
-         halfSize,  halfSize, -halfSize,
-         halfSize,  halfSize,  halfSize,
-         halfSize, -halfSize,  halfSize,
-
-        // Left face
-        -halfSize, -halfSize, -halfSize,
-        -halfSize, -halfSize,  halfSize,
-        -halfSize,  halfSize,  halfSize,
-        -halfSize,  halfSize, -halfSize,
-    ];
-
-    const indices = [
-        0, 1, 2,      0, 2, 3,    // front
-        4, 5, 6,      4, 6, 7,    // back
-        8, 9, 10,     8, 10, 11,  // top
-        12, 13, 14,   12, 14, 15, // bottom
-        16, 17, 18,   16, 18, 19, // right
-        20, 21, 22,   20, 22, 23, // left
-    ];
-
-    return {
-        vertices: vertices,
-        indices: indices
+        vertexCount: geometry.indices.length,
+        textureCoord: textureCoordBuffer
     };
 }
 
@@ -216,18 +317,41 @@ function createRectangularPrism(width, height, depth) {
         // Left
         -1, 0, 0,  -1, 0, 0,  -1, 0, 0,  -1, 0, 0
     ];
-
+    // Texture coordinates for each vertex
+    const textureCoordinates = [
+        // Front face
+        0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+        // Back face
+        0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+        // Top face
+        0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+        // Bottom face
+        0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+        // Right face
+        0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+        // Left face
+        0.0, 0.0,  1.0, 0.0,  1.0, 1.0,  0.0, 1.0,
+    ];
     return {
         vertices: vertices,
         normals: normals,
-        indices: indices
+        indices: indices,
+        textureCoordinates: textureCoordinates
     };
 }
+
+const bodyRotationSlider = document.getElementById('bodyRotation');
+var bodyRotationAngle = 0; // Initial angle in degrees
+bodyRotationSlider.addEventListener('input', function() {
+    bodyRotationAngle = parseFloat(this.value);
+    // console.log(bodyRotationAngle);
+    octopusParts = assembleOctopus();
+    render(); // Update the scene with the new rotation
+});
 
 function assembleOctopus() {
     var octopusParts = [];
 
-    // Create the head
     var headSize = 4.0;
     var head = {
         geometry: createRectangularPrism(headSize, headSize, headSize),
@@ -235,6 +359,17 @@ function assembleOctopus() {
         child: null, // Will be set to the first tentacle
         sibling: null
     };
+
+    // First, apply translation to move the head to its correct position
+    var headTranslationY = -headSize / 2; // Adjust this as needed
+    glMatrix.mat4.translate(head.transform, head.transform, [0, headTranslationY, 0]);
+
+    // Then, rotate the head around the Y-axis
+    // console.log(bodyRotationAngle);
+    glMatrix.mat4.rotateY(head.transform, head.transform, glMatrix.glMatrix.toRadian(bodyRotationAngle));
+
+    // Add other transformations here if needed
+
     head.buffers = initBuffers(gl, head.geometry);
     octopusParts.push(head);
 
@@ -371,6 +506,11 @@ function drawPart(gl, programInfo, buffers, transformMatrix) {
 
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
 
+    // Bind the texture coordinate buffer
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.textureCoord);
+    gl.vertexAttribPointer(programInfo.attribLocations.textureCoord, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(programInfo.attribLocations.textureCoord);
+
     // Create a model view matrix from the provided transform matrix
     const modelViewMatrix = glMatrix.mat4.create();
     glMatrix.mat4.multiply(modelViewMatrix, viewProjectionMatrix, transformMatrix);
@@ -439,24 +579,6 @@ cameraAngle.addEventListener('input', function() {
     updateCameraAngle(this.value);
 });
 
-// ... Rest of your WebGL rendering and animation logic ...
-
-function render() {
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    gl.useProgram(programInfo.program);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthFunc(gl.LEQUAL);
-
-    // Combine the updated projection and view matrix
-    glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
-
-    // Start the traversal from the head with an identity matrix
-    var identityMatrix = glMatrix.mat4.create();
-    traverseAndDraw(octopusParts[0], identityMatrix);
-
-    requestAnimationFrame(render);
-}
-
 // Initialize camera position
 var cameraPosition = [0, 0, -10];
 var lookAtPoint = [0, 0, 0];
@@ -478,5 +600,189 @@ var viewProjectionMatrix = glMatrix.mat4.create();
 glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
 gl.viewport(0, 0, canvas.width, canvas.height)
 
+// ... Rest of your WebGL rendering and animation logic ...
+
+function render() {
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.useProgram(programInfo.program);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    // Set up the light uniforms
+    setupLightingUniforms();
+
+    // Combine the updated projection and view matrix
+    glMatrix.mat4.multiply(viewProjectionMatrix, projectionMatrix, viewMatrix);
+
+    // Start the traversal from the head with an identity matrix
+    var identityMatrix = glMatrix.mat4.create();
+    traverseAndDraw(octopusParts[0], identityMatrix);
+
+    if (isAnimating) {
+        updateAnimation();
+        requestAnimationFrame(render); // Continue the animation loop
+    }
+}
+
+let keyframes = [];
+let currentKeyframe = { timestamp: 0, angles: deepCopy(tentacleJointAngles) };
+
+function deepCopy(obj) {
+    return JSON.parse(JSON.stringify(obj));
+}
+
+function saveKeyframe() {
+    let currentAngles = [];
+    for (let i = 0; i < 8; i++) {
+        currentAngles.push({ ...tentacleJointAngles[i] });
+    }
+    keyframes.push({ timestamp: Date.now(), jointAngles: currentAngles });
+}
+
+let isAnimating = false;
+let animationStartTime = null;
+
+function saveCurrentAnimation() {
+    const animationData = JSON.stringify(keyframes);
+    const blob = new Blob([animationData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'animation.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    alert('Animation saved!');
+}
+
+document.getElementById('recordKeyframe').addEventListener('click', recordCurrentKeyframe);
+document.getElementById('playAnimation').addEventListener('click', playAnimation);
+document.getElementById('stopAnimation').addEventListener('click', stopAnimation);
+document.getElementById('saveAnimation').addEventListener('click', saveCurrentAnimation);
+document.getElementById('loadAnimation').addEventListener('click', loadAnimationFromFile);
+document.getElementById('fileInput').addEventListener('change', loadAnimation);
+
+function recordCurrentKeyframe() {
+    keyframes.push({ timestamp: Date.now(), angles: deepCopy(tentacleJointAngles) });
+    alert('Keyframe recorded');
+}
+
+function loadAnimationFromFile() {
+    document.getElementById('fileInput').click();
+}
+
+function loadAnimation() {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                let loadedKeyframes = JSON.parse(e.target.result);
+                // Perform validation on loadedKeyframes if necessary
+                keyframes = loadedKeyframes;
+                alert('Animation loaded!');
+            } catch (error) {
+                alert('Failed to load animation: ' + error.message);
+            }
+        };
+        reader.readAsText(file);
+    }
+}
+
+function playAnimation() {
+    if (keyframes.length > 1) {
+        isAnimating = true;
+        animationStartTime = Date.now();
+        render();  // Start the rendering loop
+    } else {
+        alert('Not enough keyframes to play animation.');
+    }
+}
+
+function stopAnimation() {
+    isAnimating = false;
+    animationStartTime = null;
+    render();
+}
+
+function interpolateAngle(startAngle, endAngle, factor) {
+    return startAngle + (endAngle - startAngle) * factor;
+}
+
+let animationSpeed = 5; // Speed factor; 2 means twice as fast
+
+// function updateAnimation() {
+//     if (!isAnimating) return;
+
+//     let currentTime = Date.now();
+//     let elapsedTime = (currentTime - animationStartTime) * animationSpeed; // Speed up the animation
+
+//     // Map elapsedTime to keyframes timeline
+//     let totalAnimationDuration = keyframes[keyframes.length - 1].timestamp - keyframes[0].timestamp;
+//     let animationProgressTime = (elapsedTime % totalAnimationDuration) + keyframes[0].timestamp;
+
+//     interpolateKeyframes(animationProgressTime);
+
+//     // Reassemble the octopus parts with the new joint angles
+//     octopusParts = assembleOctopus();
+// }
+
+// function interpolateKeyframes(timestamp) {
+//     // Find the two keyframes surrounding the current timestamp
+//     let prevKeyframe = null;
+//     let nextKeyframe = null;
+//     for (let keyframe of keyframes) {
+//         if (keyframe.timestamp <= timestamp) prevKeyframe = keyframe;
+//         if (keyframe.timestamp >= timestamp && !nextKeyframe) nextKeyframe = keyframe;
+//         if (prevKeyframe && nextKeyframe) break;
+//     }
+
+//     if (!prevKeyframe || !nextKeyframe) return; // No interpolation if keyframes are not set
+
+//     // Calculate interpolation factor
+//     let factor = (timestamp - prevKeyframe.timestamp) / (nextKeyframe.timestamp - prevKeyframe.timestamp);
+
+//     // Interpolate each joint angle
+//     for (let i = 0; i < tentacleJointAngles.length; i++) {
+//         for (let joint of ['base', 'mid', 'tip']) {
+//             tentacleJointAngles[i][joint] = interpolateAngle(prevKeyframe.angles[i][joint], nextKeyframe.angles[i][joint], factor);
+//         }
+//     }
+// }
+
+function updateAnimation() {
+    if (!isAnimating || keyframes.length < 2) return;
+
+    let currentTime = Date.now();
+    let elapsedTime = (currentTime - animationStartTime) * animationSpeed; // Speed up the animation
+
+    // Uniform duration for each keyframe
+    let uniformKeyframeDuration = (keyframes[keyframes.length - 1].timestamp - keyframes[0].timestamp) / (keyframes.length - 1);
+
+    // Determine the current position in the animation cycle
+    let animationCycleTime = elapsedTime % (uniformKeyframeDuration * (keyframes.length - 1));
+    
+    // Determine the current keyframe index
+    let keyframeIndex = Math.floor(animationCycleTime / uniformKeyframeDuration);
+    keyframeIndex = Math.min(keyframeIndex, keyframes.length - 2); // Ensure index is within bounds
+
+    // Calculate the interpolation factor between the current and next keyframe
+    let factor = (animationCycleTime % uniformKeyframeDuration) / uniformKeyframeDuration;
+
+    // Interpolate between the current keyframe and the next
+    interpolateKeyframes(factor, keyframes[keyframeIndex], keyframes[keyframeIndex + 1]);
+
+    // Reassemble the octopus parts with the new joint angles
+    octopusParts = assembleOctopus();
+}
+
+function interpolateKeyframes(factor, keyframe1, keyframe2) {
+    // Interpolate each joint angle using the factor
+    for (let i = 0; i < tentacleJointAngles.length; i++) {
+        for (let joint of ['base', 'mid', 'tip']) {
+            tentacleJointAngles[i][joint] = interpolateAngle(keyframe1.angles[i][joint], keyframe2.angles[i][joint], factor);
+        }
+    }
+}
+
+octopusParts = assembleOctopus();
 render();
 

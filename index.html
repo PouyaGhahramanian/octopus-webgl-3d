@@ -28,8 +28,17 @@
             flex-direction: column;
             gap: 10px; /* Space between controls */
         }
-
-
+        .canvas-column {
+            display: flex;
+            flex-direction: column;
+            gap: 10px; /* Space between controls */
+        }
+        .keys-column {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            gap: 10px; /* Space between controls */
+        }
         .control-section {
             flex-basis: 50%; /* Each section takes half of the control width */
             padding: 10px;
@@ -37,7 +46,20 @@
     </style>
 </head>
 <body>
-    <canvas id="glCanvas" width="512" height="512"></canvas>
+    <div class="canvas-column">
+        <div>
+            <canvas id="glCanvas" width="512" height="512"></canvas>
+        </div>
+        <div class="keys-column">
+            <button id="recordKeyframe">Record Keyframe</button>
+            <button id="playAnimation">Play Animation</button>
+            <button id="stopAnimation">Stop Animation</button>
+            <button id="saveAnimation">Save Animation</button>
+            <button id="loadAnimation">Load Animation</button>
+            <input type="file" id="fileInput" style="display: none;" />
+        </div>
+    </div>
+
     <div id="controls">
         <!-- Column 1 -->
         <div class="controls-column">
@@ -45,6 +67,11 @@
             <div>
                 <label>Camera Rotation Angle: </label>
                 <input type="range" id="cameraAngle" min="0" max="360" value="0">
+            </div>
+            <h3>Body</h3>
+            <div>
+                <label>Body Rotation </label>
+                <input type="range" id="bodyRotation" min="-180" max="180" value="0">
             </div>
             <h3>Joint Controls</h3>
             <div>
