@@ -14,7 +14,17 @@ gl.clearColor(0.0, 0.0, 0.0, 0.0);
 gl.clear(gl.COLOR_BUFFER_BIT);
 
 // Define joint angles for each tentacle, assuming 8 tentacles with 3 joints each
-var tentacleJointAngles = Array(8).fill(null).map(() => ({ base: 0, mid: 0, tip: 0 }));
+// var tentacleJointAngles = Array(8).fill(null).map(() => ({ base: 0, mid: 0, tip: 0 }));
+var tentacleJointAngles = {
+    head: { rotation: { x: 0, y: 0, z: 0 }, position: { x: 0, y: 0, z: 0 } },
+    tentacles: Array(8).fill(null).map(() => ({ base: 0, mid: 0, tip: 0 }))
+};
+
+var bodyAttribute = 'rotation'; // Default attribute
+var bodyTransform = {
+    rotation: { x: 0, y: 0, z: 0 },
+    position: { x: 0, y: 0, z: 0 }
+};
 
 // Populate the Tentacle Selection Dropdown
 function populateTentacleDropdown() {
@@ -92,15 +102,6 @@ void main() {
     vLighting = ambient + directionalLight + pointLight;
 }
 `;
-
-// gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0) * vec4(vLighting, 1.0);
-// const fsSource = `
-// varying highp vec3 vLighting;
-
-// void main() {
-//     gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0) * vec4(vLighting, 1.0); // Red color with lighting applied
-// }
-// `;
 
 // With texture
 const fsSource = `
@@ -355,35 +356,73 @@ function createRectangularPrism(width, height, depth) {
     };
 }
 
-const bodyRotationSlider = document.getElementById('bodyRotation');
-var bodyRotationAngle = 0; // Initial angle in degrees
-bodyRotationSlider.addEventListener('input', function() {
-    bodyRotationAngle = parseFloat(this.value);
-    // console.log(bodyRotationAngle);
-    octopusParts = assembleOctopus();
-    render(); // Update the scene with the new rotation
+var head = null; // Global head object
+
+// Event listener for body attribute selection
+const bodyAttributeSelect = document.getElementById('bodyAttributeSelect');
+bodyAttributeSelect.addEventListener('change', function() {
+    bodyAttribute = this.value;
+    updateBodyControlRange();
 });
+
+// Update the range inputs based on the selected body attribute
+function updateBodyControlRange() {
+    const rangeValues = bodyTransform[bodyAttribute];
+    document.getElementById('bodyXControl').value = rangeValues.x;
+    document.getElementById('bodyYControl').value = rangeValues.y;
+    document.getElementById('bodyZControl').value = rangeValues.z;
+}
+
+// Event listeners for body X, Y, Z control changes
+['X', 'Y', 'Z'].forEach(axis => {
+    document.getElementById(`body${axis}Control`).addEventListener('input', function() {
+        bodyTransform[bodyAttribute][axis.toLowerCase()] = parseFloat(this.value);
+        updateOctopusBody();
+    });
+});
+
+// Function to update octopus body based on current transformation values
+function updateOctopusBody() {
+    const rotation = bodyTransform.rotation;
+    const position = bodyTransform.position;
+
+    // Reset transformation matrix for the octopus body
+    glMatrix.mat4.identity(head.transform);
+
+    // Apply rotation
+    glMatrix.mat4.rotateX(head.transform, head.transform, glMatrix.glMatrix.toRadian(rotation.x));
+    glMatrix.mat4.rotateY(head.transform, head.transform, glMatrix.glMatrix.toRadian(rotation.y));
+    glMatrix.mat4.rotateZ(head.transform, head.transform, glMatrix.glMatrix.toRadian(rotation.z));
+
+    // Apply position
+    glMatrix.mat4.translate(head.transform, head.transform, [position.x, position.y, position.z]);
+    // Update tentacleJointAngles.head
+    tentacleJointAngles.head.rotation = { ...bodyTransform.rotation };
+    tentacleJointAngles.head.position = { ...bodyTransform.position };
+    render(); // Re-render the scene with updated body transformation
+}
+
+updateBodyControlRange();
 
 function assembleOctopus() {
     var octopusParts = [];
 
     var headSize = 4.0;
-    var head = {
+    head = {
         geometry: createRectangularPrism(headSize, headSize, headSize),
         transform: glMatrix.mat4.create(),
         child: null, // Will be set to the first tentacle
         sibling: null
     };
+    // Apply transformations based on tentacleJointAngles.head
+    const headRotation = tentacleJointAngles.head.rotation;
+    const headPosition = tentacleJointAngles.head.position;
 
-    // First, apply translation to move the head to its correct position
-    var headTranslationY = -headSize / 2; // Adjust this as needed
-    glMatrix.mat4.translate(head.transform, head.transform, [0, headTranslationY, 0]);
+    glMatrix.mat4.rotateX(head.transform, head.transform, glMatrix.glMatrix.toRadian(headRotation.x));
+    glMatrix.mat4.rotateY(head.transform, head.transform, glMatrix.glMatrix.toRadian(headRotation.y));
+    glMatrix.mat4.rotateZ(head.transform, head.transform, glMatrix.glMatrix.toRadian(headRotation.z));
 
-    // Then, rotate the head around the Y-axis
-    // console.log(bodyRotationAngle);
-    glMatrix.mat4.rotateY(head.transform, head.transform, glMatrix.glMatrix.toRadian(bodyRotationAngle));
-
-    // Add other transformations here if needed
+    glMatrix.mat4.translate(head.transform, head.transform, [headPosition.x, headPosition.y, headPosition.z]);
 
     head.buffers = initBuffers(gl, head.geometry);
     octopusParts.push(head);
@@ -410,9 +449,9 @@ function assembleOctopus() {
         var z = distanceFromCenter * Math.sin(angle);
 
         // Use angles for tentacle joints
-        var baseAngle = tentacleJointAngles[i].base;
-        var midAngle = tentacleJointAngles[i].mid;
-        var tipAngle = tentacleJointAngles[i].tip;
+        var baseAngle = tentacleJointAngles.tentacles[i].base;
+        var midAngle = tentacleJointAngles.tentacles[i].mid;
+        var tipAngle = tentacleJointAngles.tentacles[i].tip;
 
         // Create base of the tentacle with adjusted position and rotation
         var tentacleBase = {
@@ -546,19 +585,6 @@ function drawPart(gl, programInfo, buffers, transformMatrix) {
     gl.drawElements(gl.TRIANGLES, buffers.vertexCount, gl.UNSIGNED_SHORT, 0);
 }
 
-// // Loop through each tentacle
-// for (let i = 1; i <= 8; i++) {
-//     // Attach event listener to each joint of the tentacle
-//     ['base', 'mid', 'tip'].forEach(joint => {
-//         const controlID = `tentacle${i}${joint.charAt(0).toUpperCase() + joint.slice(1)}`;
-//         const control = document.getElementById(controlID);
-//         if (control) {
-//             control.addEventListener('input', function() {
-//                 updateTentacleAngle(i, joint, parseFloat(this.value));
-//             });
-//         }
-//     });
-// }
 
 // Event listener for tentacle angle change
 const tentacleAngleInput = document.getElementById('tentacleAngle');
@@ -576,7 +602,7 @@ tentacleAngleInput.addEventListener('input', function() {
 
 function updateTentacleAngle(tentacleNumber, joint, angle) {
     // Update the angle for the specified tentacle joint
-    tentacleJointAngles[tentacleNumber - 1][joint] = parseFloat(angle);
+    tentacleJointAngles.tentacles[tentacleNumber - 1][joint] = parseFloat(angle);
     // Reassemble the octopus with updated angles
     octopusParts = assembleOctopus();
     render();
@@ -597,6 +623,7 @@ function updateCameraAngle(angle) {
     // Update viewProjectionMatrix in the render loop
     render();
 }
+
 
 // Camera control
 const cameraAngle = document.getElementById('cameraAngle');
@@ -658,12 +685,16 @@ function deepCopy(obj) {
 }
 
 function saveKeyframe() {
-    let currentAngles = [];
-    for (let i = 0; i < 8; i++) {
-        currentAngles.push({ ...tentacleJointAngles[i] });
-    }
-    keyframes.push({ timestamp: Date.now(), jointAngles: currentAngles });
+    const currentAngles = {
+        head: {
+            rotation: { ...tentacleJointAngles.head.rotation },
+            position: { ...tentacleJointAngles.head.position }
+        },
+        tentacles: tentacleJointAngles.tentacles.map(tentacle => ({ ...tentacle }))
+    };
+    keyframes.push({ timestamp: Date.now(), angles: currentAngles });
 }
+
 
 let isAnimating = false;
 let animationStartTime = null;
@@ -688,7 +719,10 @@ document.getElementById('loadAnimation').addEventListener('click', loadAnimation
 document.getElementById('fileInput').addEventListener('change', loadAnimation);
 
 function recordCurrentKeyframe() {
-    keyframes.push({ timestamp: Date.now(), angles: deepCopy(tentacleJointAngles) });
+    // Deeply copy the current angles to the new keyframe
+    const currentAnglesCopy = deepCopy(tentacleJointAngles);
+    keyframes.push({ timestamp: Date.now(), angles: currentAnglesCopy });
+    // console.log(keyframes);
     alert('Keyframe recorded');
 }
 
@@ -720,6 +754,7 @@ function playAnimation() {
         animationStartTime = Date.now();
         render();  // Start the rendering loop
     } else {
+        console.log(keyframes);
         alert('Not enough keyframes to play animation.');
     }
 }
@@ -734,46 +769,7 @@ function interpolateAngle(startAngle, endAngle, factor) {
     return startAngle + (endAngle - startAngle) * factor;
 }
 
-let animationSpeed = 5; // Speed factor; 2 means twice as fast
-
-// function updateAnimation() {
-//     if (!isAnimating) return;
-
-//     let currentTime = Date.now();
-//     let elapsedTime = (currentTime - animationStartTime) * animationSpeed; // Speed up the animation
-
-//     // Map elapsedTime to keyframes timeline
-//     let totalAnimationDuration = keyframes[keyframes.length - 1].timestamp - keyframes[0].timestamp;
-//     let animationProgressTime = (elapsedTime % totalAnimationDuration) + keyframes[0].timestamp;
-
-//     interpolateKeyframes(animationProgressTime);
-
-//     // Reassemble the octopus parts with the new joint angles
-//     octopusParts = assembleOctopus();
-// }
-
-// function interpolateKeyframes(timestamp) {
-//     // Find the two keyframes surrounding the current timestamp
-//     let prevKeyframe = null;
-//     let nextKeyframe = null;
-//     for (let keyframe of keyframes) {
-//         if (keyframe.timestamp <= timestamp) prevKeyframe = keyframe;
-//         if (keyframe.timestamp >= timestamp && !nextKeyframe) nextKeyframe = keyframe;
-//         if (prevKeyframe && nextKeyframe) break;
-//     }
-
-//     if (!prevKeyframe || !nextKeyframe) return; // No interpolation if keyframes are not set
-
-//     // Calculate interpolation factor
-//     let factor = (timestamp - prevKeyframe.timestamp) / (nextKeyframe.timestamp - prevKeyframe.timestamp);
-
-//     // Interpolate each joint angle
-//     for (let i = 0; i < tentacleJointAngles.length; i++) {
-//         for (let joint of ['base', 'mid', 'tip']) {
-//             tentacleJointAngles[i][joint] = interpolateAngle(prevKeyframe.angles[i][joint], nextKeyframe.angles[i][joint], factor);
-//         }
-//     }
-// }
+let animationSpeed = 20; // Speed factor; 2 means twice as fast
 
 function updateAnimation() {
     if (!isAnimating || keyframes.length < 2) return;
@@ -802,13 +798,42 @@ function updateAnimation() {
 }
 
 function interpolateKeyframes(factor, keyframe1, keyframe2) {
-    // Interpolate each joint angle using the factor
-    for (let i = 0; i < tentacleJointAngles.length; i++) {
-        for (let joint of ['base', 'mid', 'tip']) {
-            tentacleJointAngles[i][joint] = interpolateAngle(keyframe1.angles[i][joint], keyframe2.angles[i][joint], factor);
+    // Interpolate each joint angle for the tentacles
+    // Ensure the keyframes have the correct structure
+    if (keyframe1.angles.tentacles && keyframe2.angles.tentacles) {
+        for (let i = 0; i < keyframe1.angles.tentacles.length; i++) {
+            for (let joint of ['base', 'mid', 'tip']) {
+                tentacleJointAngles.tentacles[i][joint] = interpolateAngle(
+                    keyframe1.angles.tentacles[i][joint],
+                    keyframe2.angles.tentacles[i][joint],
+                    factor
+                );
+            }
         }
     }
+
+    // Interpolate head rotation and position if present
+    if (keyframe1.angles.head && keyframe2.angles.head) {
+    // Interpolate head rotation
+    for (let axis of ['x', 'y', 'z']) {
+        tentacleJointAngles.head.rotation[axis] = interpolateAngle(
+            keyframe1.angles.head.rotation[axis],
+            keyframe2.angles.head.rotation[axis],
+            factor
+        );
+    }
+
+    // Interpolate head position
+    for (let axis of ['x', 'y', 'z']) {
+        tentacleJointAngles.head.position[axis] = interpolateAngle(
+            keyframe1.angles.head.position[axis],
+            keyframe2.angles.head.position[axis],
+            factor
+        );
+    }
+    }
 }
+
 
 octopusParts = assembleOctopus();
 render();

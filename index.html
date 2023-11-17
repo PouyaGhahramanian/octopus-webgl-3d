@@ -13,14 +13,28 @@
             <div class="camera-controls">
                 <h3>Camera Control</h3>
                 <label for="cameraAngle">Camera Rotation Angle: </label>
-                <input type="range" id="cameraAngle" min="0" max="360" value="0">
+                <input type="range" id="cameraAngle" min="-45" max="45" value="0">
             </div>
-
             <div class="body-controls">
                 <h3>Body Control</h3>
-                <label for="bodyRotation">Body Rotation: </label>
-                <input type="range" id="bodyRotation" min="-180" max="180" value="0">
+                <label for="bodyAttributeSelect">Select Attribute:</label>
+                <select id="bodyAttributeSelect">
+                    <option value="rotation">Rotation</option>
+                    <option value="position">Position</option>
+                </select>
+
+                <div class="axis-controls">
+                    <label>X-Axis:</label>
+                    <input type="range" id="bodyXControl" min="-180" max="180" value="0">
+                    
+                    <label>Y-Axis:</label>
+                    <input type="range" id="bodyYControl" min="-180" max="180" value="0">
+                    
+                    <label>Z-Axis:</label>
+                    <input type="range" id="bodyZControl" min="-180" max="180" value="0">
+                </div>
             </div>
+
 
             <div class="tentacle-controls">
                 <h3>Tentacle Controls</h3>
