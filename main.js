@@ -16,6 +16,21 @@ gl.clear(gl.COLOR_BUFFER_BIT);
 // Define joint angles for each tentacle, assuming 8 tentacles with 3 joints each
 var tentacleJointAngles = Array(8).fill(null).map(() => ({ base: 0, mid: 0, tip: 0 }));
 
+// Populate the Tentacle Selection Dropdown
+function populateTentacleDropdown() {
+    const tentacleSelect = document.getElementById('tentacleSelect');
+    for (let i = 1; i <= 8; i++) {
+        const option = document.createElement('option');
+        option.value = i;
+        option.textContent = `Tentacle ${i}`;
+        tentacleSelect.appendChild(option);
+    }
+}
+
+// Call the function to populate the dropdown
+populateTentacleDropdown();
+
+
 // No lighting
 // const vsSource = `
 //     attribute vec4 aVertexPosition;
@@ -531,19 +546,31 @@ function drawPart(gl, programInfo, buffers, transformMatrix) {
     gl.drawElements(gl.TRIANGLES, buffers.vertexCount, gl.UNSIGNED_SHORT, 0);
 }
 
-// Loop through each tentacle
-for (let i = 1; i <= 8; i++) {
-    // Attach event listener to each joint of the tentacle
-    ['base', 'mid', 'tip'].forEach(joint => {
-        const controlID = `tentacle${i}${joint.charAt(0).toUpperCase() + joint.slice(1)}`;
-        const control = document.getElementById(controlID);
-        if (control) {
-            control.addEventListener('input', function() {
-                updateTentacleAngle(i, joint, parseFloat(this.value));
-            });
-        }
-    });
-}
+// // Loop through each tentacle
+// for (let i = 1; i <= 8; i++) {
+//     // Attach event listener to each joint of the tentacle
+//     ['base', 'mid', 'tip'].forEach(joint => {
+//         const controlID = `tentacle${i}${joint.charAt(0).toUpperCase() + joint.slice(1)}`;
+//         const control = document.getElementById(controlID);
+//         if (control) {
+//             control.addEventListener('input', function() {
+//                 updateTentacleAngle(i, joint, parseFloat(this.value));
+//             });
+//         }
+//     });
+// }
+
+// Event listener for tentacle angle change
+const tentacleAngleInput = document.getElementById('tentacleAngle');
+tentacleAngleInput.addEventListener('input', function() {
+    const tentacleNumber = document.getElementById('tentacleSelect').value;
+    const tentaclePart = document.getElementById('tentaclePart').value;
+    const angle = parseFloat(this.value);
+
+    updateTentacleAngle(tentacleNumber, tentaclePart, angle);
+    render(); // Update the scene with the new angle
+});
+
 
 // ... Add event listeners for other tentacle controls ...
 

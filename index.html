@@ -3,186 +3,54 @@
 <head>
     <title>CS465/575 Assignment 2: 3D Octopus using WebGL</title>
     <script src="gl-matrix-min.js"></script>
-    <style>
-        body {
-            display: flex;
-            align-items: start;
-            justify-content: center;
-            padding-top: 20px; /* Add space at the top */
-        }
-
-        #glCanvas {
-            border: 2px solid black; /* Add a border to the canvas */
-            margin-top: 20px;
-        }
-
-        #controls {
-            display: grid;
-            grid-template-columns: 1fr 1fr; /* Two columns of equal width */
-            margin-left: 20px;
-            gap: 10px; /* Space between columns */
-        }
-
-        .controls-column {
-            display: flex;
-            flex-direction: column;
-            gap: 10px; /* Space between controls */
-        }
-        .canvas-column {
-            display: flex;
-            flex-direction: column;
-            gap: 10px; /* Space between controls */
-        }
-        .keys-column {
-            display: flex;
-            flex-direction: row;
-            justify-content: center;
-            gap: 10px; /* Space between controls */
-        }
-        .control-section {
-            flex-basis: 50%; /* Each section takes half of the control width */
-            padding: 10px;
-        }
-    </style>
+    <link rel="stylesheet" type="text/css" href="styles.css">
 </head>
 <body>
-    <div class="canvas-column">
-        <div>
-            <canvas id="glCanvas" width="512" height="512"></canvas>
-        </div>
-        <div class="keys-column">
-            <button id="recordKeyframe">Record Keyframe</button>
-            <button id="playAnimation">Play Animation</button>
-            <button id="stopAnimation">Stop Animation</button>
-            <button id="saveAnimation">Save Animation</button>
-            <button id="loadAnimation">Load Animation</button>
-            <input type="file" id="fileInput" style="display: none;" />
-        </div>
-    </div>
+    <div class="main-container">
+        <canvas id="glCanvas" width="512" height="512"></canvas>
 
-    <div id="controls">
-        <!-- Column 1 -->
-        <div class="controls-column">
-            <h3>Camera Control</h3>
-            <div>
-                <label>Camera Rotation Angle: </label>
+        <div class="control-panel">
+            <div class="camera-controls">
+                <h3>Camera Control</h3>
+                <label for="cameraAngle">Camera Rotation Angle: </label>
                 <input type="range" id="cameraAngle" min="0" max="360" value="0">
             </div>
-            <h3>Body</h3>
-            <div>
-                <label>Body Rotation </label>
+
+            <div class="body-controls">
+                <h3>Body Control</h3>
+                <label for="bodyRotation">Body Rotation: </label>
                 <input type="range" id="bodyRotation" min="-180" max="180" value="0">
             </div>
-            <h3>Joint Controls</h3>
-            <div>
-                <label>Tentacle 1 Base Angle </label>
-                <input type="range" id="tentacle1Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 1 Mid Angle </label>
-                <input type="range" id="tentacle1Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 1 Tip Angle </label>
-                <input type="range" id="tentacle1Tip" min="-90" max="90" value="0">
+
+            <div class="tentacle-controls">
+                <h3>Tentacle Controls</h3>
+                <label for="tentacleSelect">Select Tentacle:</label>
+                <select id="tentacleSelect">
+                    <!-- Options for tentacle numbers -->
+                </select>
+
+                <label for="tentaclePart">Select Part:</label>
+                <select id="tentaclePart">
+                    <option value="base">Base</option>
+                    <option value="mid">Mid</option>
+                    <option value="tip">Tip</option>
+                </select>
+
+                <label for="tentacleAngle">Angle:</label>
+                <input type="range" id="tentacleAngle" min="-90" max="90" value="0">
             </div>
 
-            <div>
-                <label>Tentacle 2 Base Angle </label>
-                <input type="range" id="tentacle2Base" min="-90" max="90" value="0">
+            <div class="animation-controls">
+                <button id="recordKeyframe">Record Keyframe</button>
+                <button id="playAnimation">Play Animation</button>
+                <button id="stopAnimation">Stop Animation</button>
+                <button id="saveAnimation">Save Animation</button>
+                <button id="loadAnimation">Load Animation</button>
+                <input type="file" id="fileInput" style="display: none;">
             </div>
-            <div>
-                <label>Tentacle 2 Mid Angle </label>
-                <input type="range" id="tentacle2Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 2 Tip Angle </label>
-                <input type="range" id="tentacle2Tip" min="-90" max="90" value="0">
-            </div>
-
-            <div>
-                <label>Tentacle 3 Base Angle </label>
-                <input type="range" id="tentacle3Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 3 Mid Angle </label>
-                <input type="range" id="tentacle3Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 3 Tip Angle </label>
-                <input type="range" id="tentacle3Tip" min="-90" max="90" value="0">
-            </div>   
-        </div>
-    
-        <!-- Column 2 -->
-        <div class="controls-column">
-            <!-- <h3>Controls 2</h3> -->
-            <div>
-                <label>Tentacle 4 Base Angle </label>
-                <input type="range" id="tentacle4Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 4 Mid Angle </label>
-                <input type="range" id="tentacle4Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 4 Tip Angle </label>
-                <input type="range" id="tentacle4Tip" min="-90" max="90" value="0">
-            </div>  
-            <div>
-                <label>Tentacle 5 Base Angle </label>
-                <input type="range" id="tentacle5Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 5 Mid Angle </label>
-                <input type="range" id="tentacle5Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 5 Tip Angle </label>
-                <input type="range" id="tentacle5Tip" min="-90" max="90" value="0">
-            </div>
-
-            <div>
-                <label>Tentacle 6 Base Angle </label>
-                <input type="range" id="tentacle6Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 6 Mid Angle </label>
-                <input type="range" id="tentacle6Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 6 Tip Angle </label>
-                <input type="range" id="tentacle6Tip" min="-90" max="90" value="0">
-            </div>
-
-            <div>
-                <label>Tentacle 7 Base Angle </label>
-                <input type="range" id="tentacle7Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 7 Mid Angle </label>
-                <input type="range" id="tentacle7Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 7 Tip Angle </label>
-                <input type="range" id="tentacle7Tip" min="-90" max="90" value="0">
-            </div>
-
-            <div>
-                <label>Tentacle 8 Base Angle </label>
-                <input type="range" id="tentacle8Base" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 8 Mid Angle </label>
-                <input type="range" id="tentacle8Mid" min="-90" max="90" value="0">
-            </div>
-            <div>
-                <label>Tentacle 8 Tip Angle </label>
-                <input type="range" id="tentacle8Tip" min="-90" max="90" value="0">
-            </div>
-            <!-- Add more tentacle controls here -->
         </div>
     </div>
-    <script src="main.js"></script> <!-- Link to your JavaScript file -->
+    
+    <script src="main.js"></script>
 </body>
 </html>
