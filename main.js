@@ -695,7 +695,6 @@ function saveKeyframe() {
     keyframes.push({ timestamp: Date.now(), angles: currentAngles });
 }
 
-
 let isAnimating = false;
 let animationStartTime = null;
 
@@ -769,26 +768,46 @@ function interpolateAngle(startAngle, endAngle, factor) {
     return startAngle + (endAngle - startAngle) * factor;
 }
 
-let animationSpeed = 20; // Speed factor; 2 means twice as fast
+// let animationSpeed = 100; // Speed factor; 2 means twice as fast
+
+// Get the slider and value display elements
+const animationSpeedSlider = document.getElementById('animationSpeed');
+const speedValueDisplay = document.getElementById('speedValue');
+
+// Initialize animationSpeed
+let animationSpeed = parseInt(animationSpeedSlider.value);
+
+// Event listener for the slider
+animationSpeedSlider.addEventListener('input', function() {
+    animationSpeed = parseInt(this.value);
+    speedValueDisplay.textContent = this.value;
+});
+
+// ... rest of your JavaScript code ...
+
 
 function updateAnimation() {
     if (!isAnimating || keyframes.length < 2) return;
 
     let currentTime = Date.now();
-    let elapsedTime = (currentTime - animationStartTime) * animationSpeed; // Speed up the animation
+    // Calculate elapsed time since the animation started
+    let elapsedTime = currentTime - animationStartTime;
 
-    // Uniform duration for each keyframe
-    let uniformKeyframeDuration = (keyframes[keyframes.length - 1].timestamp - keyframes[0].timestamp) / (keyframes.length - 1);
+    // Apply the animation speed factor
+    let adjustedElapsedTime = elapsedTime * animationSpeed;
+
+    // Calculate the total duration of one cycle of animation
+    let totalAnimationDuration = (keyframes[keyframes.length - 1].timestamp - keyframes[0].timestamp);
 
     // Determine the current position in the animation cycle
-    let animationCycleTime = elapsedTime % (uniformKeyframeDuration * (keyframes.length - 1));
+    let animationCycleTime = adjustedElapsedTime % totalAnimationDuration;
     
-    // Determine the current keyframe index
-    let keyframeIndex = Math.floor(animationCycleTime / uniformKeyframeDuration);
+    // Determine the keyframe index based on the current cycle time
+    let keyframeIndex = Math.floor(animationCycleTime / (totalAnimationDuration / (keyframes.length - 1)));
     keyframeIndex = Math.min(keyframeIndex, keyframes.length - 2); // Ensure index is within bounds
 
     // Calculate the interpolation factor between the current and next keyframe
-    let factor = (animationCycleTime % uniformKeyframeDuration) / uniformKeyframeDuration;
+    let factor = (animationCycleTime % (totalAnimationDuration / (keyframes.length - 1))) / (totalAnimationDuration / (keyframes.length - 1));
 
     // Interpolate between the current keyframe and the next
     interpolateKeyframes(factor, keyframes[keyframeIndex], keyframes[keyframeIndex + 1]);
@@ -833,7 +852,6 @@ function interpolateKeyframes(factor, keyframe1, keyframe2) {
     }
     }
 }
-
 
 octopusParts = assembleOctopus();
 render();

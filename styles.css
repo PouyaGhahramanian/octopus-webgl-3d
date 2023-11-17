@@ -63,6 +63,20 @@ button:hover {
     background-color: #45a049;
 }
 
+.animation-speed-control {
+    margin-top: 10px;
+}
+
+.animation-speed-control label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+#animationSpeed {
+    width: 100%;
+}
+
+
 @media (max-width: 768px) {
     .main-container {
         flex-direction: column;
